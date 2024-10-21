@@ -18,6 +18,10 @@ from core.madnet2.madnet2 import MADNet2
 from evaluate_stereo import *
 import core.stereo_datasets as datasets
 
+import os
+
+os.environ["CUDA_VISIBLE_DEVICES"]= "0"
+
 try:
     from torch.cuda.amp import GradScaler
 except:
@@ -267,7 +271,7 @@ def train(args):
                 logger.write_dict(results)
 
                 model.train()
-                model.module.freeze_bn()
+                # model.module.freeze_bn()
 
             total_steps += 1
 

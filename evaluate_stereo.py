@@ -12,6 +12,9 @@ from raft_stereo import RAFTStereo, autocast
 import stereo_datasets as datasets
 from utils.utils import InputPadder
 
+import torch.nn.functional as F
+
+
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -120,12 +123,28 @@ def validate_things(model, iters=32, mixed_prec=False):
         image1 = image1[None].cuda()
         image2 = image2[None].cuda()
 
-        padder = InputPadder(image1.shape, divis_by=32)
-        image1, image2 = padder.pad(image1, image2)
+        # padder = InputPadder(image1.shape, divis_by=32)
+        # image1, image2 = padder.pad(image1, image2)
+
+        # pad images -- code from MADNet 2
+        ht, wt = image1.shape[-2], image1.shape[-1]
+        pad_ht = (((ht // 128) + 1) * 128 - ht) % 128
+        pad_wd = (((wt // 128) + 1) * 128 - wt) % 128
+        _pad = [pad_wd // 2, pad_wd - pad_wd // 2, pad_ht // 2, pad_ht - pad_ht // 2]
+        image1 = F.pad(image1, _pad, mode='replicate')
+        image2 = F.pad(image2, _pad, mode='replicate')
 
         with autocast(enabled=mixed_prec):
-            _, flow_pr = model(image1, image2, iters=iters, test_mode=True)
-        flow_pr = padder.unpad(flow_pr).cpu().squeeze(0)
+            # _, flow_pr = model(image1, image2, iters=iters, test_mode=True)
+            pred_disps = model(image1, image2)
+        pred_disp = F.interpolate(pred_disps[0], scale_factor=4., mode='bilinear')[0] * -20.
+        ht, wd = pred_disp.shape[-2:]
+        c = [_pad[2], ht - _pad[3], _pad[0], wd - _pad[1]]
+        flow_pr = pred_disp[..., c[0]:c[1], c[2]:c[3]]
+
+        flow_pr = flow_pr.cpu()
+        # flow_pr = padder.unpad(flow_pr).cpu().squeeze(0)
+
         assert flow_pr.shape == flow_gt.shape, (flow_pr.shape, flow_gt.shape)
         epe = torch.sum((flow_pr - flow_gt)**2, dim=0).sqrt()
 

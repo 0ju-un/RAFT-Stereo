@@ -153,6 +153,10 @@ class SceneFlowDatasets(StereoDataset):
             if (split == 'TEST' and idx in val_idxs) or split == 'TRAIN':
                 self.image_list += [ [img1, img2] ]
                 self.disparity_list += [ disp ]
+        # 10 samples for debuggin
+        self.image_list = self.image_list[:10]
+        self.disparity_list = self.disparity_list[:10]
+
         logging.info(f"Added {len(self.disparity_list) - original_length} from FlyingThings {self.dstype}")
 
     def _add_monkaa(self):
@@ -226,6 +230,8 @@ class FallingThings(StereoDataset):
             self.image_list += [ [img1, img2] ]
             self.disparity_list += [ disp ]
 
+
+
 class TartanAir(StereoDataset):
     def __init__(self, aug_params=None, root='datasets', keywords=[]):
         super().__init__(aug_params, reader=frame_utils.readDispTartanAir)
@@ -298,8 +304,9 @@ def fetch_dataloader(args):
             new_dataset = Middlebury(aug_params, split=dataset_name.replace('middlebury_',''))
         elif dataset_name == 'sceneflow':
             clean_dataset = SceneFlowDatasets(aug_params, dstype='frames_cleanpass')
-            final_dataset = SceneFlowDatasets(aug_params, dstype='frames_finalpass')
-            new_dataset = (clean_dataset*4) + (final_dataset*4)
+            # final_dataset = SceneFlowDatasets(aug_params, dstype='frames_finalpass')
+            # new_dataset = (clean_dataset*4) + (final_dataset*4)
+            new_dataset = clean_dataset
             logging.info(f"Adding {len(new_dataset)} samples from SceneFlow")
         elif 'kitti' in dataset_name:
             new_dataset = KITTI(aug_params, split=dataset_name)
