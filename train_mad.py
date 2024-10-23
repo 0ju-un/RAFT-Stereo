@@ -132,12 +132,12 @@ class Logger:
 
     SUM_FREQ = 100
 
-    def __init__(self, model, scheduler):
+    def __init__(self, model, scheduler, name):
         self.model = model
         self.scheduler = scheduler
         self.total_steps = 0
         self.running_loss = {}
-        self.writer = SummaryWriter(log_dir='runs')
+        self.writer = SummaryWriter(log_dir=f'runs/{name}')
 
     def _print_training_status(self):
         metrics_data = [self.running_loss[k]/Logger.SUM_FREQ for k in sorted(self.running_loss.keys())]
@@ -188,7 +188,7 @@ def train(args):
     train_loader = datasets.fetch_dataloader(args)
     optimizer, scheduler = fetch_optimizer(args, model)
     total_steps = 0
-    logger = Logger(model, scheduler)
+    logger = Logger(model, scheduler, args.name)
 
     if args.restore_ckpt is not None:
         assert args.restore_ckpt.endswith(".pth")
