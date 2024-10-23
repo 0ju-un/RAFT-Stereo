@@ -10,17 +10,10 @@ from torch.utils.tensorboard import SummaryWriter
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
-
 from core.raft_stereo import RAFTStereo
-from core.madnet2.madnet2 import MADNet2
 
 from evaluate_stereo import *
 import core.stereo_datasets as datasets
-
-import os
-
-os.environ["CUDA_VISIBLE_DEVICES"]= "0"
 
 try:
     from torch.cuda.amp import GradScaler
@@ -75,55 +68,13 @@ def sequence_loss(flow_preds, flow_gt, valid, loss_gamma=0.9, max_flow=700):
 
     return flow_loss, metrics
 
-def compute_metrics(disp, gt, valid, max_flow=700):
-    # add metric (code from RAFT-Stereo)
-    # exlude invalid pixels and extremely large diplacements
-    mag = torch.sum(gt**2, dim=1).sqrt()
 
-    # exclude extremly large displacements
-    valid = ((valid >= 0.5) & (mag < max_flow)).unsqueeze(1)
-    assert valid.shape == gt.shape, [valid.shape, gt.shape]
-    assert not torch.isinf(gt[valid.bool()]).any()
-
-    epe = torch.sum((disp - gt) ** 2, dim=1).sqrt()
-    epe = epe.view(-1)[valid.view(-1)]
-
-    metrics = {
-        'epe': epe.mean().item(),
-        '1px': (epe < 1).float().mean().item(),
-        '3px': (epe < 3).float().mean().item(),
-        '5px': (epe < 5).float().mean().item(),
-    }
-
-    return metrics
-
-def compute_mad_loss(image2, image3, predictions, gt, validgt, max_flow=700):
-    # exlude invalid pixels and extremely large diplacements
-    mag = torch.sum(gt ** 2, dim=1).sqrt()
-
-    # exclude extremly large displacements
-    validgt = ((validgt >= 0.5) & (mag < max_flow)).unsqueeze(1)
-    assert validgt.shape == gt.shape, [validgt.shape, gt.shape]
-    assert not torch.isinf(gt[validgt.bool()]).any()
-    # only use mode 'full++'
-    # legacy from original MADNet training (classical average reduction without any weights gives almost identical results)
-    loss = [0.001 * F.l1_loss(predictions[0][validgt > 0], gt[validgt > 0], reduction='sum') / 20.,
-            0.001 * F.l1_loss(predictions[1][validgt > 0], gt[validgt > 0], reduction='sum') / 20.,
-            0.001 * F.l1_loss(predictions[2][validgt > 0], gt[validgt > 0], reduction='sum') / 20.,
-            0.001 * F.l1_loss(predictions[3][validgt > 0], gt[validgt > 0], reduction='sum') / 20.,
-            0.001 * F.l1_loss(predictions[4][validgt > 0], gt[validgt > 0], reduction='sum') / 20.]
-    loss = sum(loss).mean()
-    return loss
 def fetch_optimizer(args, model):
     """ Create the optimizer and learning rate scheduler """
-    # optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wdecay, eps=1e-8)
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wdecay, eps=1e-8, betas = (0.9, 0.999)
-)
+    optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wdecay, eps=1e-8)
 
-    # scheduler = optim.lr_scheduler.OneCycleLR(optimizer, args.lr, args.num_steps+100,
-    #         pct_start=0.01, cycle_momentum=False, anneal_strategy='linear')
-
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=150000, gamma=0.5)
+    scheduler = optim.lr_scheduler.OneCycleLR(optimizer, args.lr, args.num_steps+100,
+            pct_start=0.01, cycle_momentum=False, anneal_strategy='linear')
 
     return optimizer, scheduler
 
@@ -180,9 +131,7 @@ class Logger:
 
 def train(args):
 
-    # model = nn.DataParallel(RAFTStereo(args))
-    model = nn.DataParallel(MADNet2(args))
-
+    model = nn.DataParallel(RAFTStereo(args))
     print("Parameter Count: %d" % count_parameters(model))
 
     train_loader = datasets.fetch_dataloader(args)
@@ -199,8 +148,7 @@ def train(args):
 
     model.cuda()
     model.train()
-    # remove for madnet2
-    # model.module.freeze_bn() # We keep BatchNorm frozen
+    model.module.freeze_bn() # We keep BatchNorm frozen
 
     validation_frequency = 10000
 
@@ -214,40 +162,11 @@ def train(args):
             optimizer.zero_grad()
             image1, image2, flow, valid = [x.cuda() for x in data_blob]
 
-            # pad images -- code from MADNet 2
-            ht, wt = image1.shape[-2], image1.shape[-1]
-            pad_ht = (((ht // 128) + 1) * 128 - ht) % 128
-            pad_wd = (((wt // 128) + 1) * 128 - wt) % 128
-            _pad = [pad_wd // 2, pad_wd - pad_wd // 2, pad_ht // 2, pad_ht - pad_ht // 2]
-            image1 = F.pad(image1, _pad, mode='replicate')
-            image2 = F.pad(image2, _pad, mode='replicate')
-
             assert model.training
-            # flow_predictions = model(image1, image2, iters=args.train_iters) # for raft-stereo
-            pred_disps = model(image1, image2) # for madnet2
-
+            flow_predictions = model(image1, image2, iters=args.train_iters)
             assert model.training
 
-            # upsample and remove padding for final prediction -- code from MADNet 2
-            pred_disp = F.interpolate(pred_disps[0], scale_factor=4., mode='bilinear')[0] * -20.
-            ht, wd = pred_disp.shape[-2:]
-            c = [_pad[2], ht - _pad[3], _pad[0], wd - _pad[1]]
-            pred_disp = pred_disp[..., c[0]:c[1], c[2]:c[3]]
-
-            # upsample and remove padding from all predictions (if needed for adaptation) -- code from MADNet 2
-            pred_disps = [F.interpolate(pred_disps[i], scale_factor=2 ** (i + 2)) * -20. for i in
-                          range(len(pred_disps))]
-
-            pred_disps = [pred_disps[i][..., c[0]:c[1], c[2]:c[3]] for i in range(len(pred_disps))]
-
-            image1 = image1[..., c[0]:c[1], c[2]:c[3]]
-            image2 = image2[..., c[0]:c[1], c[2]:c[3]]
-
-            # loss, metrics = sequence_loss(flow_predictions, flow, valid) # for ratf-stereo
-            loss = compute_mad_loss(image1, image2, pred_disps, flow, valid)
-
-            metrics = compute_metrics(pred_disp, flow, valid)
-
+            loss, metrics = sequence_loss(flow_predictions, flow, valid)
             logger.writer.add_scalar("live_loss", loss.item(), global_batch_num)
             logger.writer.add_scalar(f'learning_rate', optimizer.param_groups[0]['lr'], global_batch_num)
             global_batch_num += 1
@@ -271,7 +190,7 @@ def train(args):
                 logger.write_dict(results)
 
                 model.train()
-                # model.module.freeze_bn()
+                model.module.freeze_bn()
 
             total_steps += 1
 
@@ -303,7 +222,7 @@ if __name__ == '__main__':
     parser.add_argument('--train_datasets', nargs='+', default=['sceneflow'], help="training datasets.")
     parser.add_argument('--lr', type=float, default=0.0002, help="max learning rate.")
     parser.add_argument('--num_steps', type=int, default=100000, help="length of training schedule.")
-    parser.add_argument('--image_size', type=int, nargs='+', default=[384, 768], help="size of the random image crops used during training.") # [320, 720] for RAFT-Stereo
+    parser.add_argument('--image_size', type=int, nargs='+', default=[320, 720], help="size of the random image crops used during training.")
     parser.add_argument('--train_iters', type=int, default=16, help="number of updates to the disparity field in each forward pass.")
     parser.add_argument('--wdecay', type=float, default=.00001, help="Weight decay in optimizer.")
 
