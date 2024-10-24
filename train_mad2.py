@@ -235,7 +235,7 @@ def train(args):
                 logger.write_dict(results)
 
                 model.train()
-                model.module.freeze_bn()
+                # model.module.freeze_bn()
 
             total_steps += 1
 
@@ -244,13 +244,13 @@ def train(args):
                 break
 
         if len(train_loader) >= 10000:
-            save_path = Path('checkpoints/%d_epoch_%s.pth.gz' % (total_steps + 1, args.name))
+            save_path = Path('checkpoints/%s/%d_epoch_%s.pth.gz' % (args.name,total_steps + 1, args.name))
             logging.info(f"Saving file {save_path}")
             torch.save(model.state_dict(), save_path)
 
     print("FINISHED TRAINING")
     logger.close()
-    PATH = 'checkpoints/%s.pth' % args.name
+    PATH = 'checkpoints/%s/%s.pth' % (args.name,args.name)
     torch.save(model.state_dict(), PATH)
 
     return PATH

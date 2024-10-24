@@ -121,6 +121,7 @@ def validate_things(model, iters=32, mixed_prec=False, log_dir='runs/'):
     val_dataset = datasets.SceneFlowDatasets(dstype='frames_finalpass', things_test=True)
 
     out_list, epe_list = [], []
+    nan_count = 0
     time_count = 0
     time_total = 0
     for val_id in tqdm(range(len(val_dataset))):
@@ -148,7 +149,12 @@ def validate_things(model, iters=32, mixed_prec=False, log_dir='runs/'):
         val = (valid_gt.flatten() >= 0.5) & (flow_gt.abs().flatten() < 192)
 
         out = (epe > 1.0)
-        epe_list.append(epe[val].mean().item())
+        if torch.isnan(epe[val].mean()).any():
+            epe_list.append(0)
+            nan_count += 1
+        else:
+            epe_list.append(epe[val].mean().item())
+
         out_list.append(out[val].cpu().numpy())
         onetime = end - start
         time_total = time_total + onetime
@@ -164,7 +170,7 @@ def validate_things(model, iters=32, mixed_prec=False, log_dir='runs/'):
 
     f = open('%s/log.txt'%log_dir, 'a')
     f.write("Validation Scene Flow: %f, %f\n" % (epe, d1))
-    f.write("Using time: %f\n" % (time_avg))
+    f.write("Using time: %f Nan count: %f\n" % (time_avg, nan_count))
 
     print("Validation FlyingThings: %f, %f" % (epe, d1))
     return {'things-epe': epe, 'things-d1': d1}
