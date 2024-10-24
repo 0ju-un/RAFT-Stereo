@@ -191,7 +191,7 @@ def train(args):
     # model.module.freeze_bn() # We keep BatchNorm frozen
 
     validation_frequency = 10000
-    validation_frequency = 10
+    # validation_frequency = 10
 
     scaler = GradScaler(enabled=args.mixed_precision)
 
@@ -300,5 +300,7 @@ if __name__ == '__main__':
                         format='%(asctime)s %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s')
 
     Path("checkpoints").mkdir(exist_ok=True, parents=True)
+    Path("checkpoints/%s"%args.name).mkdir(exist_ok=True, parents=True)
+
 
     train(args)
