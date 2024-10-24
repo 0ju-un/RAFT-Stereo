@@ -75,16 +75,16 @@ class guidance_encoder(nn.Module):
         out2_ = self.conv_2(out2)
 
         out3 = self.pool2x(out2)
-        out3_ = self.conv_3(out3)
+        out3_ = self.conv_3(out3) / 4
 
         out4 = self.pool2x(out3)
-        out4_ = self.conv_4(out4)
+        out4_ = self.conv_4(out4) / 8
 
         out5 = self.pool2x(out4)
-        out5_ = self.conv_5(out5)
+        out5_ = self.conv_5(out5) /16
 
         out6 = self.pool2x(out5)
-        out6_ = self.conv_6(out6)
+        out6_ = self.conv_6(out6) / 32
 
         return x, out1, out2_, out3_, out4_, out5_, out6_
 

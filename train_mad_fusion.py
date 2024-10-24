@@ -20,7 +20,7 @@ import core.stereo_datasets as datasets
 
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"]= "0"
+os.environ["CUDA_VISIBLE_DEVICES"]= "1"
 
 try:
     from torch.cuda.amp import GradScaler
@@ -203,7 +203,6 @@ def train(args):
     # model.module.freeze_bn() # We keep BatchNorm frozen
 
     validation_frequency = 10000
-    validation_frequency = 10
 
 
     scaler = GradScaler(enabled=args.mixed_precision)
