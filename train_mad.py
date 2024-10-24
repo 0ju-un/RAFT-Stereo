@@ -97,14 +97,15 @@ def compute_metrics(disp, gt, valid, max_flow=700):
 
     return metrics
 
-def compute_mad_loss(image2, image3, predictions, gt, validgt, max_flow=700):
+def compute_mad_loss(image2, image3, predictions, gt, validgt, max_disp=192):
     # exlude invalid pixels and extremely large diplacements
     mag = torch.sum(gt ** 2, dim=1).sqrt()
 
     # exclude extremly large displacements
-    validgt = ((validgt >= 0.5) & (mag < max_flow)).unsqueeze(1)
+    validgt = ((validgt >= 0.5) & (mag < max_disp)).unsqueeze(1)
     assert validgt.shape == gt.shape, [validgt.shape, gt.shape]
     assert not torch.isinf(gt[validgt.bool()]).any()
+
     # only use mode 'full++'
     # legacy from original MADNet training (classical average reduction without any weights gives almost identical results)
     loss = [0.001 * F.l1_loss(predictions[0][validgt > 0], gt[validgt > 0], reduction='sum') / 20.,
@@ -113,7 +114,19 @@ def compute_mad_loss(image2, image3, predictions, gt, validgt, max_flow=700):
             0.001 * F.l1_loss(predictions[3][validgt > 0], gt[validgt > 0], reduction='sum') / 20.,
             0.001 * F.l1_loss(predictions[4][validgt > 0], gt[validgt > 0], reduction='sum') / 20.]
     loss = sum(loss).mean()
-    return loss
+
+    epe = torch.sum((predictions[0] - gt) ** 2, dim=1).sqrt()
+    epe = epe.view(-1)[validgt.view(-1)]
+
+    metrics = {
+        'epe': epe.mean().item(),
+        '1px': (epe < 1).float().mean().item(),
+        '3px': (epe < 3).float().mean().item(),
+        '5px': (epe < 5).float().mean().item(),
+    }
+
+
+    return loss, metrics
 def fetch_optimizer(args, model):
     """ Create the optimizer and learning rate scheduler """
     # optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wdecay, eps=1e-8)
@@ -203,7 +216,6 @@ def train(args):
     # model.module.freeze_bn() # We keep BatchNorm frozen
 
     validation_frequency = 10000
-    validation_frequency = 10
 
 
     scaler = GradScaler(enabled=args.mixed_precision)
@@ -214,7 +226,7 @@ def train(args):
 
         for i_batch, (_, *data_blob) in enumerate(tqdm(train_loader)):
             optimizer.zero_grad()
-            image1, image2, flow, valid = [x.cuda() for x in data_blob]
+            image1, image2, disp_gt, valid = [x.cuda() for x in data_blob]
 
             # pad images -- code from MADNet 2
             ht, wt = image1.shape[-2], image1.shape[-1]
@@ -246,9 +258,9 @@ def train(args):
             image2 = image2[..., c[0]:c[1], c[2]:c[3]]
 
             # loss, metrics = sequence_loss(flow_predictions, flow, valid) # for ratf-stereo
-            loss = compute_mad_loss(image1, image2, pred_disps, flow, valid)
+            loss, metrics = compute_mad_loss(image1, image2, pred_disps, disp_gt, valid)
 
-            metrics = compute_metrics(pred_disp, flow, valid)
+            # metrics = compute_metrics(pred_disp, disp_gt, valid)
 
             logger.writer.add_scalar("live_loss", loss.item(), global_batch_num)
             logger.writer.add_scalar(f'learning_rate', optimizer.param_groups[0]['lr'], global_batch_num)
