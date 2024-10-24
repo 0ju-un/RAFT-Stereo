@@ -125,6 +125,8 @@ def compute_mad_loss(image2, image3, predictions, gt, validgt, max_disp=192):
         '5px': (epe < 5).float().mean().item(),
     }
 
+    return loss, metrics
+
 def fetch_optimizer(args, model):
     """ Create the optimizer and learning rate scheduler """
     # optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wdecay, eps=1e-8)
