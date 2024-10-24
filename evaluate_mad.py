@@ -1,5 +1,8 @@
 from __future__ import print_function, division
 import sys
+
+from core.madnet2 import MADNet2
+
 sys.path.append('core')
 
 import argparse
@@ -11,6 +14,9 @@ from tqdm import tqdm
 from raft_stereo import RAFTStereo, autocast
 import stereo_datasets as datasets
 from utils.utils import InputPadder
+
+import torch.nn.functional as F
+
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -115,19 +121,28 @@ def validate_things(model, iters=32, mixed_prec=False, log_dir='runs/'):
     val_dataset = datasets.SceneFlowDatasets(dstype='frames_finalpass', things_test=True)
 
     out_list, epe_list = [], []
+    time_count = 0
+    time_total = 0
     for val_id in tqdm(range(len(val_dataset))):
         _, image1, image2, flow_gt, valid_gt = val_dataset[val_id]
         image1 = image1[None].cuda()
         image2 = image2[None].cuda()
 
-        padder = InputPadder(image1.shape, divis_by=32)
+        padder = InputPadder(image1.shape, divis_by=128)
         image1, image2 = padder.pad(image1, image2)
 
         with autocast(enabled=mixed_prec):
-            _, flow_pr = model(image1, image2, iters=iters, test_mode=True)
-        flow_pr = padder.unpad(flow_pr).cpu().squeeze(0)
-        assert flow_pr.shape == flow_gt.shape, (flow_pr.shape, flow_gt.shape)
-        epe = torch.sum((flow_pr - flow_gt)**2, dim=0).sqrt()
+            start = time.time()
+            pred_disps = model(image1, image2)
+            end = time.time()
+        pred_disp = F.interpolate(pred_disps[0], scale_factor=4., mode='bilinear')[0] * -20.
+
+        pred_disp = padder.unpad(pred_disp.unsqueeze(0)).cpu().squeeze(0)
+        # pred_disp = pred_disp.cpu().squeeze(0)
+        assert pred_disp.shape == flow_gt.shape, (pred_disp.shape, flow_gt.shape)
+
+        # epe = torch.sum((pred_disp - flow_gt)**2, dim=0).sqrt()
+        epe = torch.abs(pred_disp - flow_gt)
 
         epe = epe.flatten()
         val = (valid_gt.flatten() >= 0.5) & (flow_gt.abs().flatten() < 192)
@@ -135,12 +150,21 @@ def validate_things(model, iters=32, mixed_prec=False, log_dir='runs/'):
         out = (epe > 1.0)
         epe_list.append(epe[val].mean().item())
         out_list.append(out[val].cpu().numpy())
+        onetime = end - start
+        time_total = time_total + onetime
+        time_count = time_count + 1
 
     epe_list = np.array(epe_list)
+    time_avg = time_total / time_count
+
     out_list = np.concatenate(out_list)
 
     epe = np.mean(epe_list)
     d1 = 100 * np.mean(out_list)
+
+    f = open('%s/log.txt'%log_dir, 'a')
+    f.write("Validation Scene Flow: %f, %f\n" % (epe, d1))
+    f.write("Using time: %f\n" % (time_avg))
 
     print("Validation FlyingThings: %f, %f" % (epe, d1))
     return {'things-epe': epe, 'things-d1': d1}
@@ -208,7 +232,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_gru_layers', type=int, default=3, help="number of hidden GRU levels")
     args = parser.parse_args()
 
-    model = torch.nn.DataParallel(RAFTStereo(args), device_ids=[0])
+    model = torch.nn.DataParallel(MADNet2(args), device_ids=[0])
 
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s')

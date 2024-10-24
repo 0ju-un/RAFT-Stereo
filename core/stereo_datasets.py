@@ -74,7 +74,7 @@ class StereoDataset(data.Dataset):
         img2 = np.array(img2).astype(np.uint8)
 
         disp = np.array(disp).astype(np.float32)
-        # flow = np.stack([-disp, np.zeros_like(disp)], axis=-1)
+
         flow = np.stack([disp, np.zeros_like(disp)], axis=-1)
 
         # grayscale images
@@ -89,6 +89,7 @@ class StereoDataset(data.Dataset):
             if self.sparse:
                 img1, img2, flow, valid = self.augmentor(img1, img2, flow, valid)
             else:
+
                 img1, img2, flow = self.augmentor(img1, img2, flow)
 
         img1 = torch.from_numpy(img1).permute(2, 0, 1).float()
@@ -99,16 +100,14 @@ class StereoDataset(data.Dataset):
             valid = torch.from_numpy(valid)
         else:
             valid = (flow[0].abs() < 512) & (flow[1].abs() < 512)
-
         if self.img_pad is not None:
+
             padH, padW = self.img_pad
             img1 = F.pad(img1, [padW]*2 + [padH]*2)
             img2 = F.pad(img2, [padW]*2 + [padH]*2)
 
         flow = flow[:1]
         return self.image_list[index] + [self.disparity_list[index]], img1, img2, flow, valid.float()
-
-        # return self.image_list[index] + [self.disparity_list[index]], img1, img2, disp, valid.float()
 
     def __mul__(self, v):
         copy_of_self = copy.deepcopy(self)
@@ -305,10 +304,10 @@ def fetch_dataloader(args):
         if dataset_name.startswith("middlebury_"):
             new_dataset = Middlebury(aug_params, split=dataset_name.replace('middlebury_',''))
         elif dataset_name == 'sceneflow':
-            clean_dataset = SceneFlowDatasets(aug_params, dstype='frames_cleanpass')
-            # final_dataset = SceneFlowDatasets(aug_params, dstype='frames_finalpass')
+            # clean_dataset = SceneFlowDatasets(aug_params, dstype='frames_cleanpass')
+            final_dataset = SceneFlowDatasets(aug_params, dstype='frames_finalpass')
             # new_dataset = (clean_dataset*4) + (final_dataset*4)
-            new_dataset = clean_dataset
+            new_dataset = final_dataset
             logging.info(f"Adding {len(new_dataset)} samples from SceneFlow")
         elif 'kitti' in dataset_name:
             new_dataset = KITTI(aug_params, split=dataset_name)
