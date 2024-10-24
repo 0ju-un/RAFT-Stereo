@@ -38,7 +38,7 @@ class CorrBlock1D:
 
         return img
 
-    def __call__(self, coords):
+    def __call__(self, coords, guide=None, cross_attn_layer=None):
         r = self.radius
         coords = coords[:, :1].permute(0, 2, 3, 1)
         batch, h1, w1, _ = coords.shape
@@ -46,6 +46,11 @@ class CorrBlock1D:
         out_pyramid = []
         for i in range(self.num_levels):
             corr = self.corr_pyramid[i]
+
+            corr = corr.view(batch, h1, w1, -1)  # modify later...
+            corr = corr.permute(3, 2, 1, 0).flatten(2).permute(1, 2, 0)  # CxWxHxN -> CxWxHN / N H W C
+            corr = corr.reshape(batch*h1*w1, 1, 1, -1)
+
             dx = torch.linspace(-r, r, 2*r+1)
             dx = dx.view(1, 1, 2*r+1, 1).to(coords.device)
             x0 = dx + coords.reshape(batch*h1*w1, 1, 1, 1) / 2**i
@@ -54,6 +59,11 @@ class CorrBlock1D:
             coords_lvl = torch.cat([x0,y0], dim=-1)
             corr = self.bilinear_sampler(corr, coords_lvl)
             corr = corr.view(batch, h1, w1, -1)
+            if guide is not None:
+                corr = corr.permute(3, 2, 1, 0).flatten(2).permute(1, 2, 0)  # CxWxHxN -> CxWxHN / N H W C
+                corr, corr_attn = cross_attn_layer(corr, guide)
+                corr = corr.reshape(batch, h1, w1, -1)
+
             out_pyramid.append(corr)
 
         out = torch.cat(out_pyramid, dim=-1)

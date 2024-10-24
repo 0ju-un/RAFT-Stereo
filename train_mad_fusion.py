@@ -13,9 +13,9 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 from core.raft_stereo import RAFTStereo
-from core.madnet2.madnet2 import MADNet2
+from core.madnet2.madnet2_fusion import MADNet2Fusion
 
-from evaluate_stereo import *
+from evaluate_mad_fusion import *
 import core.stereo_datasets as datasets
 
 import os
@@ -181,7 +181,7 @@ class Logger:
 def train(args):
 
     # model = nn.DataParallel(RAFTStereo(args))
-    model = nn.DataParallel(MADNet2(args))
+    model = nn.DataParallel(MADNet2Fusion(args))
 
     print("Parameter Count: %d" % count_parameters(model))
 
@@ -223,10 +223,12 @@ def train(args):
             _pad = [pad_wd // 2, pad_wd - pad_wd // 2, pad_ht // 2, pad_ht - pad_ht // 2]
             image1 = F.pad(image1, _pad, mode='replicate')
             image2 = F.pad(image2, _pad, mode='replicate')
+            guide_proxy = flow.clone()
+            guide_proxy = F.pad(guide_proxy, _pad, mode='replicate')
 
             assert model.training
             # flow_predictions = model(image1, image2, iters=args.train_iters) # for raft-stereo
-            pred_disps = model(image1, image2) # for madnet2
+            pred_disps = model(image1, image2, guide_proxy) # for madnet2 fusion
 
             assert model.training
 

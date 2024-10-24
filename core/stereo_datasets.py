@@ -155,9 +155,9 @@ class SceneFlowDatasets(StereoDataset):
             if (split == 'TEST' and idx in val_idxs) or split == 'TRAIN':
                 self.image_list += [ [img1, img2] ]
                 self.disparity_list += [ disp ]
-        # # 10 samples for debuggin
-        # self.image_list = self.image_list[:10]
-        # self.disparity_list = self.disparity_list[:10]
+        # 10 samples for debuggin
+        self.image_list = self.image_list[:10]
+        self.disparity_list = self.disparity_list[:10]
 
         logging.info(f"Added {len(self.disparity_list) - original_length} from FlyingThings {self.dstype}")
 
