@@ -58,7 +58,7 @@ def compute_mad_loss(disp_preds, disp_gt, valid,  max_disp=192):
                 0.001 * F.l1_loss(disp_preds[4][valid > 0], disp_gt[valid > 0], reduction='sum') / 20.]
         accumulated_loss = torch.stack([loss[i] * loss_weights[i] for i in range(len(loss))],0)
         # loss = sum(loss).mean()
-        loss = sum(loss).mean()
+        loss = accumulated_loss.mean()
 
     epe = torch.sum((disp_preds[0] - disp_gt) ** 2, dim=1).sqrt()
     epe = epe.view(-1)[valid.view(-1)]
@@ -190,8 +190,8 @@ def train(args):
     model.train()
     # model.module.freeze_bn() # We keep BatchNorm frozen
 
-    # validation_frequency = 10000
-    validation_frequency = 10
+    validation_frequency = 10000
+    # validation_frequency = 10
 
     scaler = GradScaler(enabled=args.mixed_precision)
 
@@ -220,7 +220,7 @@ def train(args):
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
             scaler.step(optimizer)
-            if total_steps % args.decay_step == 0:
+            if total_steps + 1 % args.decay_step == 0:
                 scheduler.step()
             # scheduler.step()
             scaler.update()
