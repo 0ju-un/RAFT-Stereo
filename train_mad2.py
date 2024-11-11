@@ -113,7 +113,7 @@ def fetch_optimizer(args, model):
     """ Create the optimizer and learning rate scheduler """
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wdecay, eps=1e-8)
 
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=150000, gamma=0.5)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=419700, gamma=0.5)
 
 
     return optimizer, scheduler
