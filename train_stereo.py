@@ -88,7 +88,7 @@ class Logger:
         self.scheduler = scheduler
         self.total_steps = 0
         self.running_loss = {}
-        self.writer = SummaryWriter(log_dir='runs')
+        self.writer = SummaryWriter(log_dir=f'runs/{args.name}')
 
     def _print_training_status(self):
         metrics_data = [self.running_loss[k]/Logger.SUM_FREQ for k in sorted(self.running_loss.keys())]
@@ -99,7 +99,7 @@ class Logger:
         logging.info(f"Training Metrics ({self.total_steps}): {training_str + metrics_str}")
 
         if self.writer is None:
-            self.writer = SummaryWriter(log_dir='runs')
+            self.writer = SummaryWriter(log_dir=f'runs/{args.name}')
 
         for k in self.running_loss:
             self.writer.add_scalar(k, self.running_loss[k]/Logger.SUM_FREQ, self.total_steps)
@@ -120,7 +120,7 @@ class Logger:
 
     def write_dict(self, results):
         if self.writer is None:
-            self.writer = SummaryWriter(log_dir='runs')
+            self.writer = SummaryWriter(log_dir=f'runs/{args.name}')
 
         for key in results:
             self.writer.add_scalar(key, results[key], self.total_steps)
@@ -181,7 +181,7 @@ def train(args):
             logger.push(metrics)
 
             if total_steps % validation_frequency == validation_frequency - 1:
-                save_path = Path('checkpoints/%d_%s.pth' % (total_steps + 1, args.name))
+                save_path = Path('checkpoints/%s/%d_%s.pth' % (args.name, total_steps + 1, args.name))
                 logging.info(f"Saving file {save_path.absolute()}")
                 torch.save(model.state_dict(), save_path)
 
@@ -199,13 +199,13 @@ def train(args):
                 break
 
         if len(train_loader) >= 10000:
-            save_path = Path('checkpoints/%d_epoch_%s.pth.gz' % (total_steps + 1, args.name))
+            save_path = Path('checkpoints/%s/%d_epoch_%s.pth.gz' % (args.name,total_steps + 1, args.name))
             logging.info(f"Saving file {save_path}")
             torch.save(model.state_dict(), save_path)
 
     print("FINISHED TRAINING")
     logger.close()
-    PATH = 'checkpoints/%s.pth' % args.name
+    PATH = 'checkpoints/%s/%s.pth' % (args.name, args.name)
     torch.save(model.state_dict(), PATH)
 
     return PATH
@@ -255,5 +255,7 @@ if __name__ == '__main__':
                         format='%(asctime)s %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s')
 
     Path("checkpoints").mkdir(exist_ok=True, parents=True)
+    Path("checkpoints/%s"%args.name).mkdir(exist_ok=True, parents=True)
+
 
     train(args)

@@ -58,7 +58,7 @@ def compute_mad_loss(disp_preds, disp_gt, valid,  max_disp=192):
                 0.001 * F.l1_loss(disp_preds[4][valid > 0], disp_gt[valid > 0], reduction='sum') / 20.]
         accumulated_loss = torch.stack([loss[i] * loss_weights[i] for i in range(len(loss))],0)
         # loss = sum(loss).mean()
-        loss = sum(loss).mean()
+        loss = accumulated_loss.mean()
 
     epe = torch.sum((disp_preds[0] - disp_gt) ** 2, dim=1).sqrt()
     epe = epe.view(-1)[valid.view(-1)]
@@ -114,7 +114,7 @@ def fetch_optimizer(args, model):
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wdecay, eps=1e-8)
 
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=419700, gamma=0.5)
-
+    # scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.5)
 
     return optimizer, scheduler
 
@@ -180,11 +180,11 @@ def train(args):
     logger = Logger(model, scheduler)
 
     if args.restore_ckpt is not None:
-        assert args.restore_ckpt.endswith(".pth")
+        # assert args.restore_ckpt.endswith(".pth")
         logging.info("Loading checkpoint...")
         checkpoint = torch.load(args.restore_ckpt)
         model.load_state_dict(checkpoint, strict=True)
-        logging.info(f"Done loading checkpoint")
+        logging.info(f"Done loading checkpoint {args.restore_ckpt}")
 
     model.cuda()
     model.train()
@@ -220,13 +220,15 @@ def train(args):
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
             scaler.step(optimizer)
+            # if total_steps + 1 % args.decay_step == 0:
+            #     scheduler.step()
             scheduler.step()
             scaler.update()
 
             logger.push(metrics)
 
             if total_steps % validation_frequency == validation_frequency - 1:
-                save_path = Path('checkpoints/%d_%s.pth' % (total_steps + 1, args.name))
+                save_path = Path('checkpoints/%s/%d_%s.pth' % (args.name, total_steps + 1, args.name))
                 logging.info(f"Saving file {save_path.absolute()}")
                 torch.save(model.state_dict(), save_path)
 
@@ -260,6 +262,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--name', default='raft-stereo', help="name your experiment")
     parser.add_argument('--restore_ckpt', help="restore checkpoint")
+
     parser.add_argument('--mixed_precision', action='store_true', help='use mixed precision')
 
     # Training parameters
@@ -271,6 +274,8 @@ if __name__ == '__main__':
     parser.add_argument('--image_size', type=int, nargs='+', default=[384, 768], help="size of the random image crops used during training.")
     parser.add_argument('--train_iters', type=int, default=16, help="number of updates to the disparity field in each forward pass.")
     parser.add_argument('--wdecay', type=float, default=.00001, help="Weight decay in optimizer.")
+    parser.add_argument('--decay_step', type=int, default=400000, help="decay step for learning rate scheduler")
+
 
     # Validation parameters
     parser.add_argument('--valid_iters', type=int, default=32, help='number of flow-field updates during validation forward pass')
