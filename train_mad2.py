@@ -263,6 +263,7 @@ if __name__ == '__main__':
     parser.add_argument('--mixed_precision', action='store_true', help='use mixed precision')
 
     # Training parameters
+    parser.add_argument('--warmup', action='store_true', help='use mixed precision')
     parser.add_argument('--batch_size', type=int, default=6, help="batch size used during training.")
     parser.add_argument('--train_datasets', nargs='+', default=['sceneflow'], help="training datasets.")
     parser.add_argument('--lr', type=float, default=0.0002, help="max learning rate.")
